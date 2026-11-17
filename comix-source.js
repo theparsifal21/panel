@@ -10,16 +10,16 @@ function saveLinks(x){try{localStorage.setItem(storageKey(),JSON.stringify(x))}c
 async function request(path){
  const controller=new AbortController(),t=setTimeout(()=>controller.abort(),18000);
  try{const res=await fetch(API+path,{signal:controller.signal,headers:{"Accept":"application/json"}});
- if(!res.ok)throw Error("Source returned HTTP "+res.status);
+ if(!res.ok)throw Error("Source returned HTTP "+res.status+" (the source may require authorization)");
  return await res.json()}finally{clearTimeout(t)}
 }
 function unwrap(x){if(Array.isArray(x))return x;if(!x||typeof x!=="object")return [];
- for(const k of ["results","items","chapters","manga","comics","list"]){if(Array.isArray(x[k]))return x[k]}
+ for(const k of ["results","items","chapters","manga","comics","list","data"]){if(Array.isArray(x[k]))return x[k]}
  if(x.data)return unwrap(x.data);return []}
 function name(x){return x.title||x.name||x.english_title||x.slug||"Untitled"}
-function sourceId(x){return String(x.slug||x.hid||x.id||x.manga_id||"")}
+function sourceId(x){return String(x.id||x.hid||x.manga_id||x.slug||"")}
 function chapterNumber(x){const raw=x.number??x.chapter_number??x.chapter??x.num??x.name??x.title;
- const match=String(raw??"").match(/(?:chapter\s*)?(\d+(?:\.\d+)?)/i);return match?Number(match[1]):null}
+ const match=String(raw??"").match(/(?:chapter|ch\.?|#)?\s*(\d+(?:\.\d+)?)/i);return match?Number(match[1]):null}
 function chapterId(x){return String(x.chapter_id||x.chapterId||x.id||x.hid||"")}
 function chapterMap(list){const map={};for(const item of list){const n=chapterNumber(item),id=chapterId(item);
  if(Number.isInteger(n)&&n>0&&id&&!map[n])map[n]=id}return map}
@@ -81,7 +81,7 @@ readView=function(s,ch,d){oldRead(s,ch,d);
  img.onerror=function(){const err=el("p","set-p","Page "+(i+1)+" could not load.");img.replaceWith(err)};
  img.src=u.href;host.appendChild(img)}
  }catch(e){if(!host.isConnected)return;host.replaceChildren(el("p","set-p","Online images unavailable: "+e.message));
- const link=el("a","back","Open title on Comix.to");link.href="https://comix.to/title/"+encodeURIComponent(entry.id);link.target="_blank";link.rel="noopener noreferrer";host.appendChild(link)}
+ const link=el("a","back","Open title on Comix.to");link.href="https://comix.to/comic/"+encodeURIComponent(entry.id);link.target="_blank";link.rel="noopener noreferrer";host.appendChild(link)}
  })()
 };
 async function checkAll(){if(!PROF||!LIB.length)return;const links=getLinks();
