@@ -95,6 +95,9 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .set-h{margin:24px 0 8px;font-size:15px}.set-p{margin:0 0 10px;color:var(--text-2);font-size:14px;max-width:60ch}
 .pages,.rnav{max-width:var(--pw,560px)}
 .pill2{left:auto;right:10px;background:var(--accent-d)}
+.swatches{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.sw{width:26px;height:26px;border-radius:50%;border:2px solid transparent;padding:0}.sw.on{border-color:var(--text)}
+.swatches input{width:32px;height:28px;padding:0;border:0;background:none;cursor:pointer}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -282,7 +285,7 @@ function imp(txt){try{var a=JSON.parse(txt);if(!Array.isArray(a))throw 0;
   col:/^#[0-9a-f]{6},#[0-9a-f]{6}$/i.test(s.col)?s.col:PAL[0],glow:/^rgba\([\d,.\s]+\)$/.test(s.glow||"")?s.glow:"",n:n,r:Math.max(0,Math.min(n,Math.floor(s.r)||0)),status:SL[s.status]?s.status:"reading",last:+s.last||0}});
  if(!ok.length)throw 0;LIB.forEach(function(s){del(s.id)});LIB=ok;ok.forEach(put);buildHero();toast("Imported "+ok.length+" titles");route()}catch(e){toast("That backup couldn’t be read")}}
 function settingsView(d){var sc=el("div","sec");sc.appendChild(el("h2",0,"Settings"));d.appendChild(sc);
- var t=el("button","btn ghost",document.documentElement.dataset.theme=="light"?"Light":"Dark");t.onclick=function(){tb.click();t.textContent=document.documentElement.dataset.theme=="light"?"Light":"Dark"};srow(d,"Theme",t);
+ var t=el("button","btn ghost",document.documentElement.dataset.theme=="light"?"Light":"Dark");t.onclick=function(){tb.click();t.textContent=document.documentElement.dataset.theme=="light"?"Light":"Dark"};srow(d,"Theme",t);colorRows(d);
  var w=el("select","sel"),cw=document.documentElement.style.getPropertyValue("--pw")||"560px";w.setAttribute("aria-label","Reader page width");
  [["Narrow","420px"],["Medium","560px"],["Wide","760px"]].forEach(function(o){var p=el("option",0,o[0]);p.value=o[1];p.selected=o[1]==cw.trim();w.appendChild(p)});w.onchange=function(){setW(w.value)};srow(d,"Reader page width",w);
  d.appendChild(el("h3","set-h","Backup"));d.appendChild(el("p","set-p","Export your library and reading progress as text. Importing replaces what is in your library now."));
@@ -321,8 +324,25 @@ $("q").addEventListener("input",function(){if(location.hash&&location.hash!="#ho
 addEventListener("hashchange",route);
 addEventListener("keydown",function(e){var m=/^#read-(\d+)-(\d+)$/.exec(location.hash),s=m&&get(+m[1]);if(!s||/INPUT|TEXTAREA/.test(e.target.tagName))return;
  var c=+m[2]+(e.key=="ArrowRight"?1:e.key=="ArrowLeft"?-1:0);if(c!=+m[2]&&c>=1&&c<=s.n)location.hash="read-"+s.id+"-"+c});
+/* Colors */
+var ACC=["#9065FF","#3b82f6","#ef4444","#22c55e","#ec4899","#f59e0b"],BGS={"default":null,midnight:["#0b1020","#131a2e","#1b2440","#26304f"],oled:["#000000","#0d0d10","#17171c","#232329"],warm:["#15110f","#1e1815","#2a221e","#382e28"],forest:["#0c1411","#141f1b","#1d2c26","#2a3d35"]};
+var COL={acc:ACC[0],bg:"default"};
+try{var cs=JSON.parse(localStorage.getItem("panel-colors")||"null");if(cs&&/^#[0-9a-f]{6}$/i.test(cs.acc))COL.acc=cs.acc;if(cs&&BGS.hasOwnProperty(cs.bg))COL.bg=cs.bg}catch(e){}
+function shade(h,f){var n=parseInt(h.slice(1),16);return"#"+[16,8,0].map(function(sh){return("0"+Math.round(((n>>sh)&255)*f).toString(16)).slice(-2)}).join("")}
+function applyColors(){var r=document.documentElement.style,light=document.documentElement.dataset.theme=="light",b=BGS[COL.bg];
+ if(COL.acc.toLowerCase()==ACC[0].toLowerCase()){r.removeProperty("--accent");r.removeProperty("--accent-d")}else{r.setProperty("--accent",COL.acc);r.setProperty("--accent-d",shade(COL.acc,.72))}
+ ["--bg","--surface","--surface-2","--line"].forEach(function(k,i){if(b&&!light)r.setProperty(k,b[i]);else r.removeProperty(k)})}
+function saveColors(){try{localStorage.setItem("panel-colors",JSON.stringify(COL))}catch(e){}applyColors()}
+function colorRows(d){var a=el("div","swatches");
+ ACC.forEach(function(c){var b=el("button","sw"+(c.toLowerCase()==COL.acc.toLowerCase()?" on":""));b.style.background=c;b.setAttribute("aria-label","Accent color "+c);b.onclick=function(){COL.acc=c;saveColors();route()};a.appendChild(b)});
+ var pk=el("input");pk.type="color";pk.value=COL.acc;pk.setAttribute("aria-label","Custom accent color");pk.oninput=function(){COL.acc=pk.value;saveColors()};pk.onchange=function(){route()};a.appendChild(pk);srow(d,"Accent color",a);
+ var s=el("select","sel");s.setAttribute("aria-label","Background style (dark theme)");
+ [["default","Default"],["midnight","Midnight blue"],["oled","Pure black"],["warm","Warm brown"],["forest","Forest"]].forEach(function(o){var p=el("option",0,o[1]);p.value=o[0];p.selected=COL.bg==o[0];s.appendChild(p)});
+ s.onchange=function(){COL.bg=s.value;saveColors()};srow(d,"Background (dark theme)",s);
+ var rb=el("button","btn ghost","Reset colors");rb.onclick=function(){COL.acc=ACC[0];COL.bg="default";saveColors();route()};srow(d,"Reset to default colors",rb)}
+applyColors();
 var tb=$("theme");
-function setTheme(t){document.documentElement.dataset.theme=t;tb.textContent=t=="light"?"☀️":"🌙";tb.setAttribute("aria-label",t=="light"?"Switch to dark theme":"Switch to light theme");try{localStorage.setItem("panel-theme",t)}catch(e){}}
+function setTheme(t){document.documentElement.dataset.theme=t;tb.textContent=t=="light"?"☀️":"🌙";tb.setAttribute("aria-label",t=="light"?"Switch to dark theme":"Switch to light theme");try{localStorage.setItem("panel-theme",t)}catch(e){}applyColors()}
 try{var th=localStorage.getItem("panel-theme");if(th)setTheme(th)}catch(e){}
 tb.onclick=function(){setTheme(document.documentElement.dataset.theme=="light"?"dark":"light")};
 /* Boot: load the library from IndexedDB, falling back to in-memory data */
