@@ -30,7 +30,7 @@ const originalRead=readView;
 readView=function(s,ch,d){originalRead(s,ch,d);const entry=links()[s.id],chapter=entry?.chapters?.[ch];if(!chapter)return;
  const host=d.querySelector(".pages");if(!host)return;host.replaceChildren(el("p","set-p","Loading chapter pages…"));
  (async()=>{try{const data=await api("/pages?id="+encodeURIComponent(chapter.id));if(!data.pages?.length)throw Error("No pages available");
- if(!host.isConnected)return;host.replaceChildren();const attribution=el("p","set-p","Pages via MangaDex · Please credit the scanlation group on MangaDex.");host.appendChild(attribution);
+ if(!host.isConnected)return;host.replaceChildren();const attribution=el("p","set-p","Pages via MangaDex · Scanlation: "+(chapter.group?.join(", ")||"See MangaDex")+"");host.appendChild(attribution);
  for(const [i,url] of data.pages.entries()){const img=document.createElement("img");img.src=url;img.alt="Page "+(i+1);img.loading=i<2?"eager":"lazy";img.style.cssText="display:block;max-width:100%;width:auto;height:auto;margin:0 auto";img.onerror=()=>{img.replaceWith(el("p","set-p","Page "+(i+1)+" could not load"))};host.appendChild(img)}
  }catch(e){if(host.isConnected)host.replaceChildren(el("p","set-p","Chapter unavailable: "+e.message))}})()};
 async function check(){if(!PROF)return;for(const s of LIB){const e=links()[s.id];if(e&&Date.now()-(e.checked||0)>=SIX_HOURS){try{await sync(s,false)}catch(err){console.warn("PANEL MangaDex:",err.message)}}}}
