@@ -19,9 +19,9 @@ export default {async fetch(req){
  const p=new URLSearchParams({title,limit:"12"});p.append("contentRating[]","safe");p.append("contentRating[]","suggestive");
  const d=await upstream("/manga?"+p);return json({items:(d.data||[]).map(x=>({id:x.id,title:x.attributes?.title?.en||Object.values(x.attributes?.title||{})[0]||"Untitled",alt:x.attributes?.altTitles||[]}))})}
  if(url.pathname==="/chapters"){const id=url.searchParams.get("id");if(!UUID.test(id||""))return json({error:"Invalid manga ID"},400);
- let all=[];for(let offset=0;offset<1000;offset+=100){const p=new URLSearchParams({limit:"100",offset:String(offset),"order[chapter]":"asc"});p.append("translatedLanguage[]","en");
+ let all=[];for(let offset=0;offset<1000;offset+=100){const p=new URLSearchParams({limit:"100",offset:String(offset),"order[chapter]":"asc"});p.append("translatedLanguage[]","en");p.append("includes[]","scanlation_group");
  const d=await upstream("/manga/"+id+"/feed?"+p);all.push(...(d.data||[]));if(all.length>=d.total||(d.data||[]).length<100)break}
- return json({chapters:all.filter(x=>x.attributes?.pages>0&&x.attributes?.externalUrl==null).map(x=>({id:x.id,number:x.attributes?.chapter,title:x.attributes?.title||"",group:(x.relationships||[]).filter(r=>r.type==="scanlation_group").map(r=>r.id)}))})}
+ return json({chapters:all.filter(x=>x.attributes?.pages>0&&x.attributes?.externalUrl==null).map(x=>({id:x.id,number:x.attributes?.chapter,title:x.attributes?.title||"",group:(x.relationships||[]).filter(r=>r.type==="scanlation_group").map(r=>r.attributes?.name||r.id)}))})}
  if(url.pathname==="/pages"){const id=url.searchParams.get("id");if(!UUID.test(id||""))return json({error:"Invalid chapter ID"},400);
  const d=await chapterInfo(id);const files=d.chapter.dataSaver?.length?d.chapter.dataSaver:d.chapter.data||[];
  return json({pages:files.map((_,i)=>url.origin+"/image?id="+encodeURIComponent(id)+"&page="+i),credit:"MangaDex"})}
