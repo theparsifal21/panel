@@ -94,6 +94,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .brow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}.brow input{color:var(--text-2);max-width:100%}
 .set-h{margin:24px 0 8px;font-size:15px}.set-p{margin:0 0 10px;color:var(--text-2);font-size:14px;max-width:60ch}
 .pages,.rnav{max-width:var(--pw,560px)}
+.pill2{left:auto;right:10px;background:var(--accent-d)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -215,9 +216,11 @@ function toast(m){var e=$("toast");e.textContent=m;e.classList.add("on");clearTi
 function ago(t){var m=Math.round((Date.now()-t)/6e4);return m<1?"just now":m<60?m+" min ago":m<1440?Math.round(m/60)+" h ago":Math.round(m/1440)+" days ago"}
 /* Components */
 function cov(s,cls){var im=imgOf(s),d=el("div",cls,im?"":s.t.charAt(0).toUpperCase()),c=s.col.split(","),g="linear-gradient(160deg,"+c[0]+","+c[1]+")";d.style.setProperty("--c",im?"url('"+im+"') center/cover no-repeat,"+g:g);return d}
+var SL={reading:"Reading",hiatus:"On Hiatus",finished:"Finished",canceled:"Canceled"},LST="all";
+function stat(s){return SL[s.status]?s.status:"reading"}
 function st(s){return s.r<=0?"New":s.r>=s.n?"Up to date":"Read to Ch. "+s.r}
 function nextCh(s){return Math.min(Math.max(s.r,0)+1,s.n)}
-function card(s){var b=el("button","card"),c=cov(s,"cover");c.appendChild(el("span","pill",st(s)));b.appendChild(c);
+function card(s){var b=el("button","card"),c=cov(s,"cover");c.appendChild(el("span","pill",st(s)));if(stat(s)!="reading")c.appendChild(el("span","pill pill2",SL[stat(s)]));b.appendChild(c);
  var m=el("div","meta"),br=el("div","bar"),i=el("i");m.appendChild(el("b",0,s.t));m.appendChild(el("span",0,"Latest: Ch. "+s.n));
  i.style.width=Math.round(Math.min(s.r,s.n)/s.n*100)+"%";br.appendChild(i);m.appendChild(br);b.appendChild(m);
  b.onclick=function(){location.hash="series-"+s.id};return b}
@@ -225,13 +228,16 @@ function chRow(s,n){var b=el("button","ch"+(n<=s.r?" read":"")),t=n<=s.r?"Read":
 function back(d,href,txt){var a=el("a","back",txt);a.href=href;d.appendChild(a)}
 /* Views */
 function render(){var g=$("grid"),f=$("q").value.trim().toLowerCase(),n=0;g.innerHTML="";
- var cn=$("cont"),rd=LIB.filter(function(s){return s.r>0&&s.r<s.n}).sort(function(a,b){return b.last-a.last}).slice(0,4);cn.innerHTML="";
+ var cn=$("cont"),rd=LIB.filter(function(s){return s.r>0&&s.r<s.n&&stat(s)=="reading"}).sort(function(a,b){return b.last-a.last}).slice(0,4);cn.innerHTML="";
  if(rd.length&&!f){var cs=el("div","sec"),cg=el("div","grid");cs.appendChild(el("h2",0,"Continue Reading"));cn.appendChild(cs);rd.forEach(function(s){cg.appendChild(card(s))});cn.appendChild(cg)}
  LIB.forEach(function(s){if(f&&[s.t,s.a].concat(s.genres).join(" ").toLowerCase().indexOf(f)<0)return;n++;g.appendChild(card(s))});
  if(!n)g.appendChild(el("div","empty",LIB.length?"No manhwa found. Try a different title, author or genre.":"Your library is empty. Open Library to add a manhwa."))}
 function detail(s,d){back(d,"#home","← Back to Home");var w=el("div","det"),r=el("div"),tg=el("div","tags");w.appendChild(cov(s,"big"));
  r.appendChild(el("h1",0,s.t));[s.a].concat(s.genres).filter(Boolean).forEach(function(t){tg.appendChild(el("span","tag",t))});r.appendChild(tg);
  r.appendChild(el("p",0,s.d||"No description yet."));
+ var sr=el("div","srow"),ss=el("select","sel");sr.style.margin="10px 0";ss.setAttribute("aria-label","Status");
+ Object.keys(SL).forEach(function(k){var o=el("option",0,SL[k]);o.value=k;o.selected=stat(s)==k;ss.appendChild(o)});
+ ss.onchange=function(){s.status=ss.value;put(s);toast("Marked as "+SL[s.status])};sr.appendChild(el("span",0,"Status"));sr.appendChild(ss);r.appendChild(sr);
  var c=s.r>=s.n?s.n:nextCh(s),b=el("button","btn",s.r<=0?"Start Chapter 1":s.r>=s.n?"Re-read Chapter "+s.n:"Continue Chapter "+c);
  b.style.margin="6px 0";b.onclick=function(){location.hash="read-"+s.id+"-"+c};r.appendChild(b);
  var L=el("div","chs");for(var n=s.n;n>=1;n--)L.appendChild(chRow(s,n));r.appendChild(L);w.appendChild(r);d.appendChild(w)}
@@ -240,11 +246,13 @@ function libView(d){var sc=el("div","sec"),f=el("form","add"),g=el("div","grid")
  f.onsubmit=function(e){e.preventDefault();var v=f.elements,t=v.t.value.trim();if(!t)return;
   var s={id:Date.now(),t:t,a:v.a.value.trim(),genres:v.g.value.split(",").map(function(x){return x.trim()}).filter(Boolean).slice(0,3),d:"",col:PAL[LIB.length%PAL.length],n:Math.max(1,Math.min(9999,parseInt(v.n.value)||1)),r:0,last:0};
   LIB.push(s);put(s);buildHero();toast(t+" added");route();backfill()};
- d.appendChild(f);if(!LIB.length)g.appendChild(el("div","empty","Your library is empty. Add a manhwa above."));
- LIB.forEach(function(s){var c=el("div","cell"),b=el("button","rm","Remove");c.appendChild(card(s));
+ d.appendChild(f);var cb=el("div","tags"),cnt={all:LIB.length};LIB.forEach(function(s){cnt[stat(s)]=(cnt[stat(s)]||0)+1});
+ [["all","All"]].concat(Object.keys(SL).map(function(k){return[k,SL[k]]})).forEach(function(o){var b=el("button","tag"+(o[0]==LST?" on":""),o[1]+" ("+(cnt[o[0]]||0)+")");b.onclick=function(){LST=o[0];route()};cb.appendChild(b)});d.appendChild(cb);
+ if(!LIB.length)g.appendChild(el("div","empty","Your library is empty. Add a manhwa above."));
+ LIB.filter(function(s){return LST=="all"||stat(s)==LST}).forEach(function(s){var c=el("div","cell"),b=el("button","rm","Remove");c.appendChild(card(s));
   b.onclick=function(){if(b.dataset.s){LIB=LIB.filter(function(x){return x.id!=s.id});del(s.id);buildHero();toast(s.t+" removed");route()}
    else{b.dataset.s=1;b.textContent="Click again to remove";setTimeout(function(){b.textContent="Remove";delete b.dataset.s},3000)}};
-  c.appendChild(b);g.appendChild(c)});d.appendChild(g)}
+  c.appendChild(b);g.appendChild(c)});if(LIB.length&&!g.children.length)g.appendChild(el("div","empty","Nothing marked "+SL[LST]+" yet. Open a title and set its status."));d.appendChild(g)}
 function histView(d){var sc=el("div","sec"),L=LIB.filter(function(s){return s.last>0}).sort(function(a,b){return b.last-a.last});sc.appendChild(el("h2",0,"History"));
  if(L.length){var c=el("button","rm","Clear history");c.onclick=function(){LIB.forEach(function(s){if(s.last){s.r=0;s.last=0;put(s)}});toast("History cleared");route()};sc.appendChild(c)}
  d.appendChild(sc);if(!L.length)d.appendChild(el("div","empty","Nothing read yet. Open a chapter and it will show up here."));
@@ -271,7 +279,7 @@ function srow(d,label,node){var r=el("div","srow");r.appendChild(el("span",0,lab
 function imp(txt){try{var a=JSON.parse(txt);if(!Array.isArray(a))throw 0;
  var ok=a.filter(function(s){return s&&typeof s.t=="string"&&s.t&&s.n>=1&&isFinite(s.id)}).map(function(s){var n=Math.min(9999,Math.floor(s.n));
   return{id:+s.id,t:s.t.slice(0,120),a:String(s.a||"").slice(0,120),genres:Array.isArray(s.genres)?s.genres.slice(0,3).map(String):[],d:String(s.d||"").slice(0,500),
-  col:/^#[0-9a-f]{6},#[0-9a-f]{6}$/i.test(s.col)?s.col:PAL[0],glow:/^rgba\([\d,.\s]+\)$/.test(s.glow||"")?s.glow:"",n:n,r:Math.max(0,Math.min(n,Math.floor(s.r)||0)),last:+s.last||0}});
+  col:/^#[0-9a-f]{6},#[0-9a-f]{6}$/i.test(s.col)?s.col:PAL[0],glow:/^rgba\([\d,.\s]+\)$/.test(s.glow||"")?s.glow:"",n:n,r:Math.max(0,Math.min(n,Math.floor(s.r)||0)),status:SL[s.status]?s.status:"reading",last:+s.last||0}});
  if(!ok.length)throw 0;LIB.forEach(function(s){del(s.id)});LIB=ok;ok.forEach(put);buildHero();toast("Imported "+ok.length+" titles");route()}catch(e){toast("That backup couldn’t be read")}}
 function settingsView(d){var sc=el("div","sec");sc.appendChild(el("h2",0,"Settings"));d.appendChild(sc);
  var t=el("button","btn ghost",document.documentElement.dataset.theme=="light"?"Light":"Dark");t.onclick=function(){tb.click();t.textContent=document.documentElement.dataset.theme=="light"?"Light":"Dark"};srow(d,"Theme",t);
