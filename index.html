@@ -405,5 +405,6 @@ if(PROF)openDB().then(function(d){DB=d;return getAll()}).then(function(r){if(!r.
  .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill()});
 if(!PROF)showAuth();
 </script>
+<script src="comix-source.js" defer></script>
 </body>
 </html>
