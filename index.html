@@ -111,6 +111,8 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .afrm .btn{align-self:stretch}
 .aerr{color:#ff7a85;font-size:13px;margin:0;min-height:1em}
 .arem{display:block;margin-top:16px;color:var(--text-2);font-size:13px}
+.impbox{margin-top:30px;max-width:640px}.impbox h2{font-size:18px;margin:0 0 6px}.impbox input[type=file]{color:var(--text-2);max-width:100%}
+.pgimg{display:block;width:100%;height:auto;border-radius:6px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -142,6 +144,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
  </main>
 </div>
 <div class="toast" id="toast" role="status"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 var $=function(i){return document.getElementById(i)};
 /* Profiles (local to this browser) */
@@ -248,23 +251,33 @@ function imgOf(s){return s.img||COVERS[s.id]||""}
 /* Artwork lookup (AniList public API). Needs a normal web server: the sandbox that hosts the preview blocks it. */
 function safe(u){return typeof u=="string"&&/^https:\/\/[\w.\-\/%~?=&:+,@]+$/.test(u)?u:""}
 function lookup(s){return fetch("https://graphql.anilist.co",{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
- body:JSON.stringify({query:"query($q:String){Media(search:$q,type:MANGA,sort:SEARCH_MATCH){coverImage{extraLarge large}bannerImage description genres}}",variables:{q:s.t}})})
+ body:JSON.stringify({query:"query($q:String){Media(search:$q,type:MANGA,sort:SEARCH_MATCH){coverImage{extraLarge large}bannerImage description genres chapters staff(perPage:4,sort:RELEVANCE){edges{role node{name{full}}}}}}",variables:{q:s.t}})})
  .then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){var m=j.data&&j.data.Media;if(!m)throw 0;
   var cv=safe(m.coverImage&&(m.coverImage.extraLarge||m.coverImage.large)),bn=safe(m.bannerImage);
   if(cv&&!imgOf(s))s.img=cv;if(bn)s.banner=bn;
   if(!s.d&&m.description)s.d=(new DOMParser().parseFromString(m.description,"text/html").body.textContent||"").slice(0,400);
   if(!s.genres.length&&m.genres)s.genres=m.genres.slice(0,3).map(String);
-  s.looked=1;put(s);return true}).catch(function(){s.tried=Date.now();put(s);return false})}
+  if(!s.a&&m.staff&&m.staff.edges){var E=m.staff.edges,sr=E.filter(function(e){return /story/i.test(e.role||"")}),L=(sr.length?sr:E.slice(0,1)).map(function(e){return e.node&&e.node.name&&e.node.name.full}).filter(Boolean);
+   s.a=L.filter(function(x,i){return L.indexOf(x)==i}).slice(0,2).join(", ").slice(0,120)}
+  if(m.chapters&&s.auto){s.n=Math.min(9999,m.chapters);delete s.auto;if(s.r>s.n)s.r=s.n}
+  s.looked=2;put(s);return true}).catch(function(){s.tried=Date.now();put(s);return false})}
+function norm(x){return String(x||"").replace(/<[^>]*>/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"")}
+/* Latest chapter from the MangaUpdates public API (credit: MangaUpdates). Only ever raises the count. */
+function chapters(s){return fetch("https://api.mangaupdates.com/v1/series/search",{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({search:s.t,perpage:6})})
+ .then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){var n=norm(s.t),L=(j.results||[]).filter(function(x){return x.record&&x.record.type!="Novel"&&x.record.latest_chapter>0});
+  var m=L.filter(function(x){return norm(x.record.title)==n||norm(x.hit_title)==n})[0]||L.filter(function(x){var t=norm(x.record.title);return t.length>3&&(t.indexOf(n)>=0||n.indexOf(t)>=0)})[0];
+  s.chk=Date.now();if(m){var v=Math.min(9999,Math.floor(m.record.latest_chapter));if(s.auto||v>s.n){s.n=v;delete s.auto}}put(s);return !!m}).catch(function(){return false})}
+function need(s){var t=Date.now();if(s.looked!==2&&s.tried&&t-s.tried<6048e5)return false;return s.looked!==2||!s.chk||t-s.chk>432e5}
 var busy=0;
-function backfill(){if(busy)return;var q=LIB.filter(function(s){return !s.looked&&(!s.tried||Date.now()-s.tried>6048e5)});if(!q.length)return;busy=1;
+function backfill(){if(busy)return;var q=LIB.filter(function(s){return need(s)});if(!q.length)return;busy=1;
  (function next(){var s=q.shift();if(!s){busy=0;buildHero();if(!location.hash||/^#(home|library|explore|history)$/.test(location.hash))route();return}
-  lookup(s).then(function(){setTimeout(next,700)})})()}
+  (s.looked===2?Promise.resolve():lookup(s)).then(function(){return new Promise(function(ok){setTimeout(ok,500)})}).then(function(){return chapters(s)}).then(function(){setTimeout(next,700)})})()}
 function seed(){var t=Date.now();return SEED.map(function(s,i){var c=JSON.parse(JSON.stringify(s));c.last=c.r>0?t-(i+1)*36e5:0;return c})}
 var SEEDV=4;
 function topUp(){var v=0;try{v=+localStorage.getItem(K("panel-seedv"))||0}catch(e){}
  if(v<SEEDV){if(v<3)LIB=LIB.filter(function(x){if(x.id==2){del(2);return false}return true});if(v>0||seeded())seed().forEach(function(x){if(x.id>4&&!get(x.id)){LIB.push(x);put(x)}});[[4,243,259],[3,311,311]].forEach(function(a){var s=get(a[0]);if(s){if(s.t=="TBATE")s.t="The Beginning After the End";s.r=a[1];s.n=a[2];s.last=s.last||Date.now()-36e5;put(s)}});try{localStorage.setItem(K("panel-seedv"),SEEDV)}catch(e){}}}
 /* IndexedDB */
-function openDB(){return new Promise(function(ok,no){try{var q=indexedDB.open(PROF&&!PROF.legacy?"panel-"+PROF.id:"panel",1);q.onupgradeneeded=function(){q.result.createObjectStore("series",{keyPath:"id"})};q.onsuccess=function(){ok(q.result)};q.onerror=no}catch(e){no(e)}})}
+function openDB(){return new Promise(function(ok,no){try{var q=indexedDB.open(PROF&&!PROF.legacy?"panel-"+PROF.id:"panel",2);q.onupgradeneeded=function(){var d=q.result;if(!d.objectStoreNames.contains("series"))d.createObjectStore("series",{keyPath:"id"});if(!d.objectStoreNames.contains("pages"))d.createObjectStore("pages",{keyPath:"key"})};q.onsuccess=function(){ok(q.result)};q.onerror=no}catch(e){no(e)}})}
 function getAll(){return new Promise(function(ok,no){var q=DB.transaction("series").objectStore("series").getAll();q.onsuccess=function(){ok(q.result)};q.onerror=no})}
 function put(s){if(DB)try{DB.transaction("series","readwrite").objectStore("series").put(s)}catch(e){}}
 function del(id){if(DB)try{DB.transaction("series","readwrite").objectStore("series").delete(id)}catch(e){}}
@@ -282,7 +295,7 @@ function card(s){var b=el("button","card"),c=cov(s,"cover");c.appendChild(el("sp
  var m=el("div","meta"),br=el("div","bar"),i=el("i");m.appendChild(el("b",0,s.t));m.appendChild(el("span",0,"Latest: Ch. "+s.n));
  i.style.width=Math.round(Math.min(s.r,s.n)/s.n*100)+"%";br.appendChild(i);m.appendChild(br);b.appendChild(m);
  b.onclick=function(){location.hash="series-"+s.id};return b}
-function chRow(s,n){var b=el("button","ch"+(n<=s.r?" read":"")),t=n<=s.r?"Read":n==s.r+1?"Up next":"";b.appendChild(el("span",0,"Chapter "+n));b.appendChild(el("small",0,t));b.onclick=function(){location.hash="read-"+s.id+"-"+n};return b}
+function chRow(s,n){var b=el("button","ch"+(n<=s.r?" read":"")),t=n<=s.r?"Read":n==s.r+1?"Up next":"";b.appendChild(el("span",0,"Chapter "+n));if(IMP[s.id+":"+n])t=t?t+", Imported":"Imported";else if(kgHas(s.id,n))t=t?t+", On server":"On server";b.appendChild(el("small",0,t));b.onclick=function(){location.hash="read-"+s.id+"-"+n};return b}
 function back(d,href,txt){var a=el("a","back",txt);a.href=href;d.appendChild(a)}
 /* Views */
 function render(){var g=$("grid"),f=$("q").value.trim().toLowerCase(),n=0;g.innerHTML="";
@@ -296,13 +309,16 @@ function detail(s,d){back(d,"#home","← Back to Home");var w=el("div","det"),r=
  var sr=el("div","srow"),ss=el("select","sel");sr.style.margin="10px 0";ss.setAttribute("aria-label","Status");
  Object.keys(SL).forEach(function(k){var o=el("option",0,SL[k]);o.value=k;o.selected=stat(s)==k;ss.appendChild(o)});
  ss.onchange=function(){s.status=ss.value;put(s);toast("Marked as "+SL[s.status])};sr.appendChild(el("span",0,"Status"));sr.appendChild(ss);r.appendChild(sr);
+ var lr=el("div","srow"),li=el("input","sel");lr.style.margin="10px 0";li.type="number";li.min=1;li.max=9999;li.value=s.n;li.style.width="90px";li.setAttribute("aria-label","Latest chapter");
+ li.onchange=function(){var v=Math.max(1,Math.min(9999,parseInt(li.value)||s.n));s.n=v;if(s.r>v)s.r=v;delete s.auto;put(s);toast("Latest chapter set to "+v);route()};
+ lr.appendChild(el("span",0,"Latest chapter"));lr.appendChild(li);r.appendChild(lr);
  var c=s.r>=s.n?s.n:nextCh(s),b=el("button","btn",s.r<=0?"Start Chapter 1":s.r>=s.n?"Re-read Chapter "+s.n:"Continue Chapter "+c);
  b.style.margin="6px 0";b.onclick=function(){location.hash="read-"+s.id+"-"+c};r.appendChild(b);
- var L=el("div","chs");for(var n=s.n;n>=1;n--)L.appendChild(chRow(s,n));r.appendChild(L);w.appendChild(r);d.appendChild(w)}
+ var L=el("div","chs");for(var n=s.n;n>=1;n--)L.appendChild(chRow(s,n));r.appendChild(L);w.appendChild(r);d.appendChild(w);importBox(s,d);komgaBox(s,d)}
 function libView(d){var sc=el("div","sec"),f=el("form","add"),g=el("div","grid");sc.appendChild(el("h2",0,"Library"));d.appendChild(sc);
- f.innerHTML='<input name=t placeholder="Title" aria-label="Title" required><input name=a placeholder="Author" aria-label="Author"><input name=g placeholder="Genres, comma separated" aria-label="Genres"><input name=n type=number min=1 max=9999 value=10 aria-label="Number of chapters"><button class=btn>Add manhwa</button>';
+ f.innerHTML='<input name=t placeholder="Title" aria-label="Title" required><input name=a placeholder="Author" aria-label="Author"><input name=g placeholder="Genres, comma separated" aria-label="Genres"><input name=n type=number min=1 max=9999 placeholder="Chapters (optional)" aria-label="Number of chapters"><button class=btn>Add manhwa</button>';
  f.onsubmit=function(e){e.preventDefault();var v=f.elements,t=v.t.value.trim();if(!t)return;
-  var s={id:Date.now(),t:t,a:v.a.value.trim(),genres:v.g.value.split(",").map(function(x){return x.trim()}).filter(Boolean).slice(0,3),d:"",col:PAL[LIB.length%PAL.length],n:Math.max(1,Math.min(9999,parseInt(v.n.value)||1)),r:0,last:0};
+  var s={id:Date.now(),t:t,a:v.a.value.trim(),genres:v.g.value.split(",").map(function(x){return x.trim()}).filter(Boolean).slice(0,3),d:"",col:PAL[LIB.length%PAL.length],n:Math.max(1,Math.min(9999,parseInt(v.n.value)||1)),auto:v.n.value?0:1,r:0,last:0};
   LIB.push(s);put(s);buildHero();toast(t+" added");route();backfill()};
  d.appendChild(f);var cb=el("div","tags"),cnt={all:LIB.length};LIB.forEach(function(s){cnt[stat(s)]=(cnt[stat(s)]||0)+1});
  [["all","All"]].concat(Object.keys(SL).map(function(k){return[k,SL[k]]})).forEach(function(o){var b=el("button","tag"+(o[0]==LST?" on":""),o[1]+" ("+(cnt[o[0]]||0)+")");b.onclick=function(){LST=o[0];route()};cb.appendChild(b)});d.appendChild(cb);
@@ -322,7 +338,7 @@ function readView(s,ch,d){s.r=Math.max(s.r,ch);s.last=Date.now();put(s);back(d,"
   r.appendChild(p);r.appendChild(el("b",0,"Chapter "+ch+" of "+s.n));r.appendChild(n);return r}
  var P=el("div","pages"),c=s.col.split(",");d.appendChild(bar());
  for(var k=1;k<=6;k++){var q=el("div","pg","Page "+k);q.style.setProperty("--c","linear-gradient(160deg,"+c[0]+","+c[1]+")");P.appendChild(q)}
- d.appendChild(P);d.appendChild(bar())}
+ d.appendChild(P);d.appendChild(bar());loadPages(s,ch,P)}
 var EXG="All",EXS="az";
 function exploreView(d){var sc=el("div","sec"),bar=el("div","tags"),g=el("div","grid"),gs=["All"],sel=el("select","sel");
  LIB.forEach(function(s){s.genres.forEach(function(x){if(gs.indexOf(x)<0)gs.push(x)})});sc.appendChild(el("h2",0,"Explore"));d.appendChild(sc);
@@ -343,16 +359,151 @@ function settingsView(d){var sc=el("div","sec");sc.appendChild(el("h2",0,"Settin
  var t=el("button","btn ghost",document.documentElement.dataset.theme=="light"?"Light":"Dark");t.onclick=function(){tb.click();t.textContent=document.documentElement.dataset.theme=="light"?"Light":"Dark"};srow(d,"Theme",t);colorRows(d);
  var w=el("select","sel"),cw=document.documentElement.style.getPropertyValue("--pw")||"560px";w.setAttribute("aria-label","Reader page width");
  [["Narrow","420px"],["Medium","560px"],["Wide","760px"]].forEach(function(o){var p=el("option",0,o[0]);p.value=o[1];p.selected=o[1]==cw.trim();w.appendChild(p)});w.onchange=function(){setW(w.value)};srow(d,"Reader page width",w);
- acctRows(d);d.appendChild(el("h3","set-h","Backup"));d.appendChild(el("p","set-p","Export your library and reading progress as text. Importing replaces what is in your library now."));
+ acctRows(d);komgaRows(d);kgAutoRows(d);d.appendChild(el("h3","set-h","Backup"));d.appendChild(el("p","set-p","Export your library and reading progress as text. Importing replaces what is in your library now."));
  var ta=el("textarea","bk"),r=el("div","brow"),ex=el("button","btn ghost","Export"),im=el("button","btn","Import"),fi=el("input");ta.setAttribute("aria-label","Backup data");
  fi.type="file";fi.accept=".json,application/json";fi.setAttribute("aria-label","Choose a backup file");
  ex.onclick=function(){ta.value=JSON.stringify(LIB,null,1);ta.select();toast("Copy the text to keep your backup")};im.onclick=function(){imp(ta.value)};
  fi.onchange=function(){var f=fi.files[0];if(f){var fr=new FileReader();fr.onload=function(){ta.value=fr.result};fr.readAsText(f)}};
  r.appendChild(ex);r.appendChild(im);r.appendChild(fi);d.appendChild(r);d.appendChild(ta);
  var rs=el("button","rm","Reset library to the sample titles");rs.onclick=function(){if(rs.dataset.s){LIB.forEach(function(s){del(s.id)});LIB=seed();LIB.forEach(put);buildHero();toast("Library reset");route()}else{rs.dataset.s=1;rs.textContent="Click again to erase everything";setTimeout(function(){rs.textContent="Reset library to the sample titles";delete rs.dataset.s},3000)}};
- d.appendChild(el("h3","set-h","Danger zone"));d.appendChild(rs)}
+ d.appendChild(el("p","set-p","Artwork and details come from AniList. Latest chapter numbers come from MangaUpdates."));d.appendChild(el("h3","set-h","Danger zone"));d.appendChild(rs)}
+/* Chapter importer: ZIP, CBZ or image files you own, stored in this browser (IndexedDB) */
+var IMP={},OURLS=[],IMGX=/\.(jpe?g|png|webp|gif|avif)$/i,MIME={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp",gif:"image/gif",avif:"image/avif"};
+function nat(a,b){return a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"})}
+function numOf(t){var m=/(\d+(?:\.\d+)?)(?!.*\d)/.exec(t||"");return m?Math.floor(+m[1]):0}
+function extOf(n){return String(n).split(".").pop().toLowerCase()}
+function getPages(sid,ch){return new Promise(function(ok,no){var q=DB.transaction("pages").objectStore("pages").get(sid+":"+ch);q.onsuccess=function(){ok(q.result)};q.onerror=no})}
+function putPages(sid,ch,blobs){return new Promise(function(ok,no){var t=DB.transaction("pages","readwrite");t.objectStore("pages").put({key:sid+":"+ch,blobs:blobs});t.oncomplete=ok;t.onerror=t.onabort=function(){no(t.error||new Error("Browser storage is full"))}})}
+function delPages(sid){return new Promise(function(ok){var t=DB.transaction("pages","readwrite"),st=t.objectStore("pages"),q=st.openKeyCursor();
+ q.onsuccess=function(){var c=q.result;if(c){if(String(c.key).indexOf(sid+":")==0){st.delete(c.key);delete IMP[c.key]}c.continue()}};t.oncomplete=ok;t.onerror=ok})}
+function loadKeys(){return new Promise(function(ok){try{var q=DB.transaction("pages").objectStore("pages").getAllKeys();q.onsuccess=function(){IMP={};q.result.forEach(function(k){IMP[k]=1});ok()};q.onerror=function(){ok()}}catch(e){ok()}})}
+function nextImp(s){var m=0;Object.keys(IMP).forEach(function(k){var p=k.split(":");if(p[0]==s.id)m=Math.max(m,+p[1])});return m+1}
+function thumb(b){return new Promise(function(ok,no){var u=URL.createObjectURL(b),im=new Image();
+ im.onload=function(){var nw=im.naturalWidth,nh=Math.min(im.naturalHeight,Math.round(nw*1.42)),h=Math.round(360*nh/nw),c=document.createElement("canvas");c.width=360;c.height=h;c.getContext("2d").drawImage(im,0,0,nw,nh,0,0,360,h);URL.revokeObjectURL(u);ok(c.toDataURL("image/jpeg",.8))};
+ im.onerror=function(){URL.revokeObjectURL(u);no()};im.src=u})}
+async function importFiles(s,files,start,say){var groups=[],loose=[],next=start;
+ for(const f of files){
+  if(/\.(zip|cbz)$/i.test(f.name)){
+   if(!window.JSZip)throw new Error("The ZIP reader didn’t load. Check your connection and reload.");
+   say("Reading "+f.name+"…");var z=await JSZip.loadAsync(f),by={};
+   z.forEach(function(path,e){if(e.dir||!IMGX.test(path)||/(^|\/)(__MACOSX|\.)/.test(path))return;var i=path.lastIndexOf("/"),dir=i<0?"":path.slice(0,i);(by[dir]=by[dir]||[]).push({p:path,e:e})});
+   const dirs=Object.keys(by).sort(nat);
+   for(const dn of dirs){const list=by[dn].sort(function(a,b){return nat(a.p,b.p)}),bl=[];
+    for(const it of list){const ex=extOf(it.p);bl.push((await it.e.async("blob")).slice(0,undefined,MIME[ex]||"image/jpeg"))}
+    const cn=dirs.length>1?(numOf(dn.split("/").pop())||next):(numOf(f.name)||numOf(dn)||next);groups.push({ch:cn,blobs:bl});next=cn+1}
+  }else if(IMGX.test(f.name)||/^image\//.test(f.type))loose.push(f)}
+ if(loose.length){loose.sort(function(a,b){return nat(a.name,b.name)});groups.push({ch:start,blobs:loose.map(function(f){return f.slice(0,f.size,f.type||MIME[extOf(f.name)]||"image/jpeg")})})}
+ if(!groups.length)throw new Error("No images found in those files");
+ for(const g of groups){const cn=Math.max(1,Math.min(9999,g.ch));say("Saving chapter "+cn+" ("+g.blobs.length+" pages)…");await putPages(s.id,cn,g.blobs);IMP[s.id+":"+cn]=1;if(cn>s.n)s.n=cn}
+ if(!imgOf(s)&&groups[0].blobs[0]){try{s.img=await thumb(groups[0].blobs[0])}catch(e){}}
+ put(s);return groups.length}
+function importBox(s,d){var b=el("section","impbox"),st=el("p","set-p"),row=el("div","brow"),f=el("input"),n=el("input","sel"),go=el("button","btn","Import"),clr=el("button","rm","Remove imported pages");
+ b.appendChild(el("h2",0,"Import chapters"));
+ b.appendChild(el("p","set-p","Add pages from files you own: a ZIP or CBZ (one per chapter, or one with a folder per chapter), or loose images for a single chapter. Everything stays in this browser."));
+ f.type="file";f.multiple=true;f.accept=".zip,.cbz,image/*";f.setAttribute("aria-label","Choose chapter files");
+ n.type="number";n.min=1;n.max=9999;n.value=nextImp(s);n.style.width="90px";n.setAttribute("aria-label","Chapter number for loose images");
+ row.appendChild(f);row.appendChild(el("span","set-p","Chapter for loose images:"));row.appendChild(n);row.appendChild(go);b.appendChild(row);b.appendChild(st);
+ go.onclick=function(){var files=[].slice.call(f.files);if(!files.length){st.textContent="Choose files first.";return}go.disabled=true;st.textContent="Importing…";
+  importFiles(s,files,Math.max(1,parseInt(n.value)||1),function(m){st.textContent=m}).then(function(c){toast("Imported "+c+" chapter"+(c==1?"":"s"));route()})
+   .catch(function(e){st.textContent="Import failed: "+(e&&e.message||e);go.disabled=false})};
+ if(Object.keys(IMP).some(function(k){return k.split(":")[0]==s.id})){clr.onclick=function(){if(!clr.dataset.s){clr.dataset.s=1;clr.textContent="Click again to remove all imported pages";setTimeout(function(){clr.textContent="Remove imported pages";delete clr.dataset.s},3000);return}
+   delPages(s.id).then(function(){toast("Imported pages removed");route()})};b.appendChild(clr)}
+ d.appendChild(b)}
+function loadPages(s,ch,P){if(!DB)return;getPages(s.id,ch).then(function(rec){if(!P.isConnected)return;if(!rec||!rec.blobs){if(kgHas(s.id,ch))kgRead(s,ch,P);return}P.innerHTML="";
+ rec.blobs.forEach(function(bl,i){var im=document.createElement("img"),u=URL.createObjectURL(bl);OURLS.push(u);im.src=u;im.alt="Page "+(i+1);im.decoding="async";im.loading=i<2?"eager":"lazy";im.className="pgimg";P.appendChild(im)})}).catch(function(){})}
+/* Komga library server: read and download chapters you keep on your own server */
+var KG=null;
+function kgGet(){if(!KG){try{KG=JSON.parse(localStorage.getItem(K("panel-komga"))||"{}")||{}}catch(e){KG={}}}return KG}
+function kgSave(){try{localStorage.setItem(K("panel-komga"),JSON.stringify(KG||{}))}catch(e){toast("Browser storage is unavailable")}}
+function kgHas(sid,n){var l=(kgGet().links||{})[sid];return !!(l&&l.books&&l.books[n])}
+function kn(x){return String(x||"").toLowerCase().replace(/[^a-z0-9]+/g,"")}
+function kgReq(path,as){var c=kgGet();if(!c.url)return Promise.reject(new Error("Set your Komga server in Settings first"));
+ var h={Authorization:"Basic "+btoa(unescape(encodeURIComponent((c.user||"")+":"+(c.pass||""))))};
+ return fetch(c.url+path,{headers:h}).then(function(r){if(!r.ok)throw new Error("The server answered "+r.status);return as=="blob"?r.blob():r.json()})}
+function kgTitle(x){return (x.metadata&&x.metadata.title)||x.name||""}
+function kgFind(s){return kgReq("/api/v1/series?search="+encodeURIComponent(s.t)+"&size=8").then(function(j){var n=kn(s.t),L=j.content||[];
+ return L.filter(function(x){return kn(kgTitle(x))==n})[0]||L.filter(function(x){var t=kn(kgTitle(x));return t.length>3&&(t.indexOf(n)>=0||n.indexOf(t)>=0)})[0]||null})}
+function kgLink(s,id,title){var c=kgGet();c.links=c.links||{};c.links[s.id]={id:id,title:title,checked:0,books:{}};kgSave();return kgSync(s,true)}
+function kgSync(s,force){var c=kgGet(),l=(c.links||{})[s.id];if(!l)return Promise.reject(new Error("Not linked"));
+ if(!force&&Date.now()-(l.checked||0)<216e5)return Promise.resolve(l);
+ return kgReq("/api/v1/series/"+encodeURIComponent(l.id)+"/books?unpaged=true").then(function(j){var m={};
+  (j.content||[]).forEach(function(b){var md=b.metadata||{},n=Math.floor(parseFloat(md.numberSort!=null?md.numberSort:md.number!=null?md.number:b.number));if(n>0&&!m[n])m[n]=b.id});
+  if(!Object.keys(m).length)throw new Error("No chapters found on the server");l.books=m;l.checked=Date.now();kgSave();
+  var top=Math.max.apply(null,Object.keys(m).map(Number));if(top>s.n){s.n=Math.min(9999,top);put(s)}return l})}
+async function kgFetchChapter(s,ch,onPage){var l=(kgGet().links||{})[s.id],id=l&&l.books&&l.books[ch];if(!id)throw new Error("Chapter not on the server");
+ var pg=await kgReq("/api/v1/books/"+id+"/pages");if(!pg.length)throw new Error("The server returned no pages");var out=[];
+ for(var i=0;i<pg.length;i++){var ok=/image\/(jpeg|png|webp|gif)/.test(pg[i].mediaType||"");
+  var b=await kgReq("/api/v1/books/"+id+"/pages/"+pg[i].number+(ok?"":"?convert=jpeg"),"blob");out.push(b);if(onPage&&onPage(b,i)===false)return null}
+ return out}
+async function kgRead(s,ch,P){try{P.innerHTML="";var st=el("p","set-p","Loading chapter from your server…");P.appendChild(st);
+ var bl=await kgFetchChapter(s,ch,function(b,i){if(!P.isConnected)return false;if(i==0)st.remove();
+  var im=document.createElement("img"),u=URL.createObjectURL(b);OURLS.push(u);im.src=u;im.alt="Page "+(i+1);im.decoding="async";im.className="pgimg";P.appendChild(im)});
+ if(bl&&DB){try{await putPages(s.id,ch,bl);IMP[s.id+":"+ch]=1}catch(e){}}}
+ catch(e){if(P.isConnected)P.appendChild(el("p","set-p","Couldn’t load this chapter: "+e.message))}}
+async function kgDownloadAll(s,say){var l=(kgGet().links||{})[s.id],todo=Object.keys((l&&l.books)||{}).map(Number).sort(function(a,b){return a-b}).filter(function(n){return !IMP[s.id+":"+n]});
+ for(var i=0;i<todo.length;i++){say("Downloading chapter "+todo[i]+" ("+(i+1)+" of "+todo.length+")…");var bl=await kgFetchChapter(s,todo[i]);await putPages(s.id,todo[i],bl);IMP[s.id+":"+todo[i]]=1}
+ return todo.length}
+function kgPick(s,st){st.textContent="Searching your server…";
+ kgReq("/api/v1/series?search="+encodeURIComponent(s.t)+"&size=8").then(function(j){var L=j.content||[];st.textContent=L.length?"Choose the matching series:":"Nothing found on your server for that title.";
+  L.forEach(function(x){var t=kgTitle(x),bt=el("button","ch",t+" ("+(x.booksCount||0)+" books)");bt.style.width="100%";
+   bt.onclick=function(){kgLink(s,x.id,t).then(function(){toast("Linked and indexed");route()}).catch(function(e){st.textContent="Linked, but indexing failed: "+e.message})};st.parentNode.appendChild(bt)})})
+ .catch(function(e){st.textContent="Couldn’t reach your server: "+e.message})}
+function komgaBox(s,d){var c=kgGet();if(!c.url)return;var b=el("section","impbox"),st=el("p","set-p"),row=el("div","brow"),l=(c.links||{})[s.id];
+ b.appendChild(el("h2",0,"Library server"));
+ b.appendChild(el("p","set-p",l?"Linked to “"+l.title+"” on your server: "+Object.keys(l.books||{}).length+" chapters found.":"Link this title to the matching series on your Komga server."));
+ var fb=el("button","btn ghost",l?"Change match":"Find on server"),sy=el("button","btn","Check for new chapters"),dl=el("button","btn ghost","Download all chapters");sy.disabled=dl.disabled=!l;
+ fb.onclick=function(){kgPick(s,st)};
+ sy.onclick=function(){sy.disabled=true;st.textContent="Checking…";kgSync(s,true).then(function(){toast("Chapter list updated");route()}).catch(function(e){st.textContent="Check failed: "+e.message;sy.disabled=false})};
+ dl.onclick=function(){dl.disabled=true;kgDownloadAll(s,function(m){st.textContent=m}).then(function(n){toast(n?"Downloaded "+n+" chapters":"Everything is already downloaded");route()}).catch(function(e){st.textContent="Download stopped: "+(e&&e.message||e);dl.disabled=false})};
+ row.appendChild(fb);row.appendChild(sy);row.appendChild(dl);b.appendChild(row);b.appendChild(st);d.appendChild(b)}
+function komgaRows(d){d.appendChild(el("h3","set-h","Library server (Komga)"));
+ d.appendChild(el("p","set-p","Connect your own Komga server to read and download chapters you keep there. The address and login are stored unencrypted in this browser, so use a read-only account. Your server must allow requests from this page (CORS), and an https page needs an https server."));
+ var c=kgGet(),f=el("form","add"),u=el("input"),n=el("input"),p=el("input"),sb=el("button","btn","Save"),al=el("button","btn ghost","Link all by title"),stt=el("p","set-p");
+ u.placeholder="https://komga.example.com";u.value=c.url||"";u.setAttribute("aria-label","Server address");n.placeholder="Username";n.value=c.user||"";n.autocomplete="username";n.setAttribute("aria-label","Username");
+ p.type="password";p.placeholder="Password";p.value=c.pass||"";p.autocomplete="current-password";p.setAttribute("aria-label","Password");al.type="button";
+ f.onsubmit=function(e){e.preventDefault();var c=kgGet();try{var uu=new URL(u.value.trim());if(!/^https?:$/.test(uu.protocol))throw 0;c.url=uu.origin+uu.pathname.replace(/\/+$/,"")}catch(x){toast("Enter a valid server address");return}
+  c.user=n.value;c.pass=p.value;kgSave();toast("Server saved")};
+ al.onclick=async function(){if(!kgGet().url){toast("Save your server first");return}al.disabled=true;var made=0,c=kgGet();
+  for(var s of LIB){if((c.links||{})[s.id])continue;try{var m=await kgFind(s);if(m){await kgLink(s,m.id,kgTitle(m));made++;stt.textContent="Linked "+made+" titles…"}}catch(x){stt.textContent="Stopped: "+x.message;break}await new Promise(function(r){setTimeout(r,300)})}
+  al.disabled=false;toast("Linked "+made+" titles")};
+ [u,n,p,sb,al].forEach(function(x){f.appendChild(x)});d.appendChild(f);d.appendChild(stt)}
+/* Automatic Komga downloads: opt-out, limited batches to protect browser storage. */
+var KG_AUTO_RUNNING=false,KG_AUTO_INTERVAL=15*60*1000,KG_AUTO_BATCH=3;
+function kgAutoEnabled(){try{return localStorage.getItem(K("panel-komga-auto"))!=="off"}catch(e){return true}}
+function kgAutoSet(enabled){try{localStorage.setItem(K("panel-komga-auto"),enabled?"on":"off")}catch(e){}if(enabled)kgAutoRun()}
+async function kgAutoRun(){
+ if(KG_AUTO_RUNNING||!kgAutoEnabled()||!PROF||!DB||!navigator.onLine)return;
+ var c=kgGet();if(!c.url||!c.links)return;
+ KG_AUTO_RUNNING=true;var downloaded=0,failed=0;
+ try{
+  for(const s of LIB){
+   if(!kgAutoEnabled())break;
+   if(!(c.links||{})[s.id])continue;
+   var link;
+   try{link=await kgSync(s,false)}catch(e){failed++;continue}
+   var todo=Object.keys(link.books||{}).map(Number).filter(function(ch){return ch>0&&!IMP[s.id+":"+ch]}).sort(function(a,b){return a-b}).slice(0,KG_AUTO_BATCH);
+   for(const ch of todo){
+    if(!kgAutoEnabled())break;
+    try{var blobs=await kgFetchChapter(s,ch);await putPages(s.id,ch,blobs);IMP[s.id+":"+ch]=1;downloaded++}
+    catch(e){failed++;console.warn("PANEL auto-download",s.t,ch,e);break}
+   }
+  }
+  if(downloaded)toast("Automatically saved "+downloaded+" chapter"+(downloaded===1?"":"s"));
+  if(failed)console.warn("PANEL: "+failed+" Komga downloads/checks failed; verify server access and browser storage.");
+ }finally{KG_AUTO_RUNNING=false}
+}
+function kgAutoRows(d){
+ var cb=el("input");cb.type="checkbox";cb.checked=kgAutoEnabled();cb.setAttribute("aria-label","Automatically download Komga chapters");
+ cb.onchange=function(){kgAutoSet(cb.checked);toast(cb.checked?"Automatic downloads enabled":"Automatic downloads paused")};
+ srow(d,"Automatically download linked chapters",cb);
+ d.appendChild(el("p","set-p","While PANEL is open, check your Komga library every 15 minutes and save up to 3 missing chapters per linked title per check. Downloads stay in this browser and may use substantial storage. Close PANEL to stop downloading."));
+ var run=el("button","btn ghost","Download missing chapters now"),status=el("p","set-p");
+ run.onclick=async function(){if(KG_AUTO_RUNNING){status.textContent="A download is already running.";return}run.disabled=true;status.textContent="Checking linked titles…";await kgAutoRun();status.textContent="Check complete. Check browser storage if chapters are missing.";run.disabled=false};
+ d.appendChild(run);d.appendChild(status)
+}
+setTimeout(kgAutoRun,6000);setInterval(kgAutoRun,KG_AUTO_INTERVAL);
 function mark(n){document.querySelectorAll(".nav").forEach(function(b){if(b.dataset.n==n)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")})}
-function route(){var h=location.hash,m,s,ch,v="Home",d=$("detail"),hm=$("home");d.innerHTML="";
+function route(){var h=location.hash,m,s,ch,v="Home",d=$("detail"),hm=$("home");OURLS.forEach(function(u){URL.revokeObjectURL(u)});OURLS=[];d.innerHTML="";
  if((m=/^#read-(\d+)-(\d+)$/.exec(h))&&(s=get(+m[1]))&&(ch=+m[2])>=1&&ch<=s.n)readView(s,ch,d);
  else if((m=/^#series-(\d+)$/.exec(h))&&(s=get(+m[1])))detail(s,d);
  else if(h=="#library"){libView(d);v="Library"}
@@ -401,10 +552,9 @@ function setTheme(t){document.documentElement.dataset.theme=t;tb.textContent=t==
 try{var th=localStorage.getItem(K("panel-theme"));if(th)setTheme(th)}catch(e){}
 tb.onclick=function(){setTheme(document.documentElement.dataset.theme=="light"?"dark":"light")};
 /* Boot: load the library from IndexedDB, falling back to in-memory data */
-if(PROF)openDB().then(function(d){DB=d;return getAll()}).then(function(r){if(!r.length&&!seeded()){r=seed();r.forEach(put);try{localStorage.setItem(K("panel-seeded"),"1")}catch(e){}}return r})
+if(PROF)openDB().then(function(d){DB=d;return loadKeys().then(getAll)}).then(function(r){if(!r.length&&!seeded()){r=seed();r.forEach(put);try{localStorage.setItem(K("panel-seeded"),"1")}catch(e){}}return r})
  .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill()});
 if(!PROF)showAuth();
 </script>
-<script src="comix-source.js" defer></script>
 </body>
 </html>
