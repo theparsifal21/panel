@@ -113,7 +113,19 @@ def main():
             print("Skipping unapproved series:", title)
             continue
         series_folder = folder(session, title, root)
-        for chapter in series.get("chapters", []):
+        chapters = series.get("chapters", [])
+        manifest_url = series.get("manifest_url")
+        if manifest_url:
+            checked_url(manifest_url, allowed)
+            with image_session.get(manifest_url, timeout=30, allow_redirects=False) as response:
+                response.raise_for_status()
+                if len(response.content) > 1024 * 1024:
+                    fail("Manifest exceeds 1 MB")
+                remote = response.json()
+            if not isinstance(remote, dict) or not isinstance(remote.get("chapters"), list):
+                fail("Invalid chapter manifest")
+            chapters = remote["chapters"]
+        for chapter in chapters:
             if uploaded >= 12:
                 print("Per-run upload cap reached")
                 return
