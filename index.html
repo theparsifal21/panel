@@ -124,7 +124,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .det{grid-template-columns:1fr;gap:16px}.big{width: min(52vw,200px);margin:auto}.det h1{font-size:26px}.chs{max-height:none}.ch,.btn,.rm,.sel{min-height:44px}.ch{align-items:center}.row{flex-wrap:wrap;padding:10px;gap:9px}.row .info{min-width:100px}.srow{flex-wrap:wrap;padding:12px;gap:10px}.swatches{justify-content:flex-start}.add input,.sel,.bk{font-size:16px;max-width:100%;min-width:0}.brow{gap:8px}.rnav{flex-wrap:wrap}.pages{gap:4px}.pgimg{border-radius:0}.toast{bottom:calc(80px + env(safe-area-inset-bottom));max-width:90vw;width:max-content}.tag{min-height:36px}
 }
 </style>
-</head>
+<meta name="theme-color" content="#100e10"><link rel="manifest" href="./manifest.json"><link rel="icon" href="./logo.svg"><meta name="apple-mobile-web-app-capable" content="yes"></head>
 <body>
 <div class="app">
  <aside class="sidebar" aria-label="Navigation">
@@ -530,5 +530,5 @@ if(PROF)openDB().then(function(d){DB=d;return loadKeys().then(getAll)}).then(fun
  .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill()});
 
 </script>
-</body>
+<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(console.warn);</script></body>
 </html>
