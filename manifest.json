@@ -1,0 +1,19 @@
+{
+  "name": "PANEL",
+  "short_name": "PANEL",
+  "id": "./",
+  "description": "Read. Collect. Discover.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#100e10",
+  "theme_color": "#100e10",
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
