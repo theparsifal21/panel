@@ -1,0 +1,38 @@
+name: Refresh open chapter catalog
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+  push:
+    paths:
+      - '.github/workflows/open-chapters.yml'
+permissions:
+  contents: write
+concurrency:
+  group: open-chapter-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch official catalog
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request, pathlib
+          url = "https://www.peppercarrot.com/0_sources/episodes.json"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              catalog = json.load(response)
+          assert isinstance(catalog, list) and catalog
+          assert all(isinstance(x, dict) and "name" in x and "total_pages" in x and "translated_languages" in x for x in catalog)
+          pathlib.Path("open-chapters.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Publish catalog if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add open-chapters.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Refresh authorized chapter catalog"
+            git push
+          fi
