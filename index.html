@@ -399,7 +399,7 @@ function kgFind(s){return kgReq("/api/v1/series?search="+encodeURIComponent(s.t)
  return L.filter(function(x){return kn(kgTitle(x))==n})[0]||L.filter(function(x){var t=kn(kgTitle(x));return t.length>3&&(t.indexOf(n)>=0||n.indexOf(t)>=0)})[0]||null})}
 function kgLink(s,id,title){var c=kgGet();c.links=c.links||{};c.links[s.id]={id:id,title:title,checked:0,books:{}};kgSave();return kgSync(s,true)}
 function kgSync(s,force){var c=kgGet(),l=(c.links||{})[s.id];if(!l)return Promise.reject(new Error("Not linked"));
- if(!force&&Date.now()-(l.checked||0)<216e5)return Promise.resolve(l);
+ if(!force&&Date.now()-(l.checked||0)<9e5)return Promise.resolve(l);
  return kgReq("/api/v1/series/"+encodeURIComponent(l.id)+"/books?unpaged=true").then(function(j){var m={};
   (j.content||[]).forEach(function(b){var md=b.metadata||{},n=Math.floor(parseFloat(md.numberSort!=null?md.numberSort:md.number!=null?md.number:b.number));if(n>0&&!m[n])m[n]=b.id});
   if(!Object.keys(m).length)throw new Error("No chapters found on the server");l.books=m;l.checked=Date.now();kgSave();
@@ -445,37 +445,49 @@ function komgaRows(d){d.appendChild(el("h3","set-h","Library server (Komga)"));
 var KG_AUTO_RUNNING=false,KG_AUTO_INTERVAL=15*60*1000,KG_AUTO_BATCH=3;
 function kgAutoEnabled(){try{return localStorage.getItem(K("panel-komga-auto"))!=="off"}catch(e){return true}}
 function kgAutoSet(enabled){try{localStorage.setItem(K("panel-komga-auto"),enabled?"on":"off")}catch(e){}if(enabled)kgAutoRun()}
-async function kgAutoRun(){
- if(KG_AUTO_RUNNING||!kgAutoEnabled()||!PROF||!DB||!navigator.onLine)return;
- var c=kgGet();if(!c.url||!c.links)return;
- KG_AUTO_RUNNING=true;var downloaded=0,failed=0;
+async function kgAutoRun(force){
+ if(KG_AUTO_RUNNING)return "A check is already running.";
+ if(!force&&!kgAutoEnabled())return "Automatic downloads are paused.";
+ if(!DB||!navigator.onLine)return "Browser storage or internet connection unavailable.";
+ var c=kgGet();if(!c.url)return "Set your Komga server in Settings first.";
+ KG_AUTO_RUNNING=true;var downloaded=0,failed=0,linked=0,errors=[];
  try{
+  await loadKeys();
   for(const s of LIB){
-   if(!kgAutoEnabled())break;
-   if(!(c.links||{})[s.id])continue;
-   var link;
-   try{link=await kgSync(s,false)}catch(e){failed++;continue}
-   var todo=Object.keys(link.books||{}).map(Number).filter(function(ch){return ch>0&&!IMP[s.id+":"+ch]}).sort(function(a,b){return a-b}).slice(0,KG_AUTO_BATCH);
-   for(const ch of todo){
-    if(!kgAutoEnabled())break;
-    try{var blobs=await kgFetchChapter(s,ch);await putPages(s.id,ch,blobs);IMP[s.id+":"+ch]=1;downloaded++}
-    catch(e){failed++;console.warn("PANEL auto-download",s.t,ch,e);break}
-   }
+   if(!force&&!kgAutoEnabled())break;
+   try{
+    if(!(c.links||{})[s.id]){
+     var match=await kgFind(s);
+     if(!match||kn(kgTitle(match))!==kn(s.t))continue;
+     await kgLink(s,match.id,kgTitle(match));
+    }
+    linked++;
+    var link=await kgSync(s,!!force);
+    var todo=Object.keys(link.books||{}).map(Number).filter(function(ch){return ch>0&&!IMP[s.id+":"+ch]}).sort(function(a,b){return b-a}).slice(0,KG_AUTO_BATCH);
+    for(const ch of todo){
+     if(!force&&!kgAutoEnabled())break;
+     var blobs=await kgFetchChapter(s,ch);if(!blobs||!blobs.length)throw new Error("No readable pages");
+     await putPages(s.id,ch,blobs);IMP[s.id+":"+ch]=1;downloaded++;
+    }
+   }catch(e){failed++;if(errors.length<3)errors.push(s.t+": "+e.message)}
   }
-  if(downloaded)toast("Automatically saved "+downloaded+" chapter"+(downloaded===1?"":"s"));
-  if(failed)console.warn("PANEL: "+failed+" Komga downloads/checks failed; verify server access and browser storage.");
+  var msg=linked+" linked titles; "+downloaded+" chapters saved; "+failed+" failed.";
+  if(!linked)msg+=" No matching titles found on your server.";
+  if(errors.length)msg+=" "+errors.join(" | ");
+  if(downloaded)toast("Automatically saved "+downloaded+" chapters");
+  return msg;
  }finally{KG_AUTO_RUNNING=false}
 }
 function kgAutoRows(d){
  var cb=el("input");cb.type="checkbox";cb.checked=kgAutoEnabled();cb.setAttribute("aria-label","Automatically download Komga chapters");
  cb.onchange=function(){kgAutoSet(cb.checked);toast(cb.checked?"Automatic downloads enabled":"Automatic downloads paused")};
  srow(d,"Automatically download linked chapters",cb);
- d.appendChild(el("p","set-p","While PANEL is open, check your Komga library every 15 minutes and save up to 3 missing chapters per linked title per check. Downloads stay in this browser and may use substantial storage. Close PANEL to stop downloading."));
+ d.appendChild(el("p","set-p","While PANEL is open, check your Komga library every 15 minutes, automatically link exact title matches, and save up to 3 newest missing chapters per title per check. Downloads stay in this browser and may use substantial storage. Close PANEL to stop downloading."));
  var run=el("button","btn ghost","Download missing chapters now"),status=el("p","set-p");
- run.onclick=async function(){if(KG_AUTO_RUNNING){status.textContent="A download is already running.";return}run.disabled=true;status.textContent="Checking linked titles…";await kgAutoRun();status.textContent="Check complete. Check browser storage if chapters are missing.";run.disabled=false};
+ run.onclick=async function(){if(KG_AUTO_RUNNING){status.textContent="A download is already running.";return}run.disabled=true;status.textContent="Checking linked titles…";try{status.textContent=await kgAutoRun(true)}catch(e){status.textContent="Check failed: "+e.message}finally{run.disabled=false}};
  d.appendChild(run);d.appendChild(status)
 }
-setTimeout(kgAutoRun,6000);setInterval(kgAutoRun,KG_AUTO_INTERVAL);
+setInterval(kgAutoRun,KG_AUTO_INTERVAL);window.addEventListener("online",function(){kgAutoRun()});document.addEventListener("visibilitychange",function(){if(!document.hidden)kgAutoRun()});
 function mark(n){document.querySelectorAll(".nav").forEach(function(b){if(b.dataset.n==n)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")})}
 function route(){var h=location.hash,m,s,ch,v="Home",d=$("detail"),hm=$("home");OURLS.forEach(function(u){URL.revokeObjectURL(u)});OURLS=[];d.innerHTML="";
  if((m=/^#read-(\d+)-(\d+)$/.exec(h))&&(s=get(+m[1]))&&(ch=+m[2])>=1&&ch<=s.n)readView(s,ch,d);
@@ -527,7 +539,7 @@ try{var th=localStorage.getItem(K("panel-theme"));if(th)setTheme(th)}catch(e){}
 tb.onclick=function(){setTheme(document.documentElement.dataset.theme=="light"?"dark":"light")};
 /* Boot: load the library from IndexedDB, falling back to in-memory data */
 if(PROF)openDB().then(function(d){DB=d;return loadKeys().then(getAll)}).then(function(r){if(!r.length&&!seeded()){r=seed();r.forEach(put);try{localStorage.setItem(K("panel-seeded"),"1")}catch(e){}}return r})
- .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill()});
+ .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill();kgAutoRun()});
 
 </script>
 <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(console.warn);</script></body>
