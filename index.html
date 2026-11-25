@@ -391,11 +391,25 @@ var ONLINE_BUSY=false;
 function onlineURL(v){try{var u=new URL(v,location.href);return u.protocol==="https:"&&!u.username&&!u.password?u.href:""}catch(e){return ""}}
 function feedURL(){try{return localStorage.getItem(K("panel-online-feed"))||""}catch(e){return ""}}
 function onlineHas(s,n){return s.onlinePages&&s.onlinePages[n]&&s.onlinePages[n].length}
+async function builtInChapters(){
+ var j;
+ try{var r=await fetch("./open-chapters.json",{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("catalog unavailable");j=await r.json()}catch(e){var r=await fetch("https://www.peppercarrot.com/0_sources/episodes.json",{signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error("publisher unavailable");j=await r.json()}
+ if(!Array.isArray(j))throw Error("Invalid publisher catalog");
+ var pages={},base="https://www.peppercarrot.com/0_sources/";
+ for(var ep of j){var m=/^ep(\d+)_[-A-Za-z0-9]+$/.exec(ep.name);if(!m||!Array.isArray(ep.translated_languages)||!ep.translated_languages.includes("en")||!Number.isInteger(ep.total_pages)||ep.total_pages<1||ep.total_pages>100)continue;
+ var n=+m[1],stem=base+ep.name+"/low-res/en_Pepper-and-Carrot_by-David-Revoy_E"+m[1];pages[n]=Array.from({length:ep.total_pages+1},function(_,i){return stem+"P"+String(i).padStart(2,"0")+".jpg"})}
+ if(!Object.keys(pages).length)throw Error("No episodes");
+ var s=LIB.find(function(x){return norm(x.t)==="peppercarrot"});if(!s){s={id:900001,t:"Pepper & Carrot",a:"David Revoy",genres:["Fantasy","Adventure"],d:"Open-source fantasy webcomic. Art and story by David Revoy and contributors; CC BY 4.0. Credits are included in each episode.",col:PAL[4],r:0,last:0};LIB.push(s)}
+ s.onlinePages=pages;s.n=Math.max(...Object.keys(pages).map(Number));s.officialLinks=[{site:"Pepper & Carrot — creator website",url:"https://www.peppercarrot.com/"},{site:"CC BY 4.0 license",url:"https://creativecommons.org/licenses/by/4.0/"}];s.looked=2;s.chk=Date.now();put(s);return Object.keys(pages).length;
+}
 async function onlineSync(){
  if(ONLINE_BUSY)return "A check is already running.";
- if(!feedURL())return "No authorized chapter feed configured. Release tracking still works.";
+ 
  ONLINE_BUSY=true;
  try{
+  var built=0, builtError="";
+  try{built=await builtInChapters()}catch(e){builtError=e.message}
+  if(!feedURL()){if(!location.hash||/^#(home|library|explore)$/.test(location.hash))route();return built?built+" built-in episodes available.": "Built-in source unavailable: "+builtError}
   var res=await fetch(feedURL(),{cache:"no-store",signal:AbortSignal.timeout(20000)});
   if(!res.ok)throw new Error("Feed HTTP "+res.status);
   var j=await res.json();if(!Array.isArray(j.series))throw new Error("Invalid feed: expected series array");
@@ -415,7 +429,7 @@ async function onlineSync(){
 }
 function onlineRows(d){
  d.appendChild(el("h3","set-h","Online chapters"));
- d.appendChild(el("p","set-p","No Komga server needed. Connect a public HTTPS JSON feed of chapters you own or have permission to access. PANEL checks it every 15 minutes while open. MangaUpdates release tracking works independently."));
+ d.appendChild(el("p","set-p","Pepper & Carrot is built in. Other authorized HTTPS chapter feeds are optional. PANEL checks every 15 minutes while open; MangaUpdates tracks other release numbers independently."));
  var f=el("input","sel"),save=el("button","btn","Save & check"),st=el("p","set-p");f.type="url";f.placeholder="https://…/chapters.json";f.value=feedURL();f.setAttribute("aria-label","Authorized chapter feed URL");
  save.onclick=async function(){var u=f.value.trim();if(u&&!/^https:\/\//i.test(u)){st.textContent="Enter an HTTPS feed URL.";return}try{localStorage.setItem(K("panel-online-feed"),u)}catch(e){st.textContent="Storage unavailable";return}save.disabled=true;st.textContent="Checking…";try{st.textContent=await onlineSync()}finally{save.disabled=false}};
  srow(d,"Chapter feed URL",f);d.appendChild(save);d.appendChild(st);
@@ -429,7 +443,7 @@ function onlineLinks(s,d){
 function onlineRead(s,ch,P){
  if(!P.isConnected)return;P.innerHTML="";
  if(!onlineHas(s,ch)){P.appendChild(el("p","set-p","No authorized pages available for this chapter. Open an official reading link or import your own chapter files."));onlineLinks(s,P);return}
- var urls=s.onlinePages[ch];for(var i=0;i<urls.length;i++){var im=el("img","pgimg");im.src=urls[i];im.alt="Page "+(i+1);im.loading=i<2?"eager":"lazy";im.onerror=function(){this.alt="Page unavailable from source"};P.appendChild(im)}
+ if(norm(s.t)==="peppercarrot"){P.appendChild(el("p","set-p","Pepper & Carrot — David Revoy and contributors, CC BY 4.0. Original credits included."));onlineLinks(s,P)} var urls=s.onlinePages[ch];for(var i=0;i<urls.length;i++){var im=el("img","pgimg");im.src=urls[i];im.alt="Page "+(i+1);im.loading=i<2?"eager":"lazy";im.onerror=function(){this.alt="Page unavailable from source"};P.appendChild(im)}
 }
 setInterval(function(){onlineSync();backfill()},900000);
 window.addEventListener("online",function(){onlineSync();backfill()});
