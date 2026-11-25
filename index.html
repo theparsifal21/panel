@@ -393,7 +393,7 @@ function feedURL(){try{return localStorage.getItem(K("panel-online-feed"))||""}c
 function onlineHas(s,n){return s.onlinePages&&s.onlinePages[n]&&s.onlinePages[n].length}
 async function builtInChapters(){
  var j;
- try{var r=await fetch("./open-chapters.json",{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("catalog unavailable");j=await r.json()}catch(e){var r=await fetch("https://www.peppercarrot.com/0_sources/episodes.json",{signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error("publisher unavailable");j=await r.json()}
+ try{var r=await fetch("https://raw.githubusercontent.com/theparsifal21/panel/main/open-chapters.json",{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("catalog unavailable");j=await r.json()}catch(e){var r=await fetch("https://www.peppercarrot.com/0_sources/episodes.json",{signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error("publisher unavailable");j=await r.json()}
  if(!Array.isArray(j))throw Error("Invalid publisher catalog");
  var pages={},base="https://www.peppercarrot.com/0_sources/";
  for(var ep of j){var m=/^ep(\d+)_[-A-Za-z0-9]+$/.exec(ep.name);if(!m||!Array.isArray(ep.translated_languages)||!ep.translated_languages.includes("en")||!Number.isInteger(ep.total_pages)||ep.total_pages<1||ep.total_pages>100)continue;
