@@ -225,7 +225,7 @@ function imgOf(s){return s.img||COVERS[s.id]||""}
 /* Artwork lookup (AniList public API). Needs a normal web server: the sandbox that hosts the preview blocks it. */
 function safe(u){return typeof u=="string"&&/^https:\/\/[\w.\-\/%~?=&:+,@]+$/.test(u)?u:""}
 function lookup(s){return fetch("https://graphql.anilist.co",{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
- body:JSON.stringify({query:"query($q:String){Media(search:$q,type:MANGA,sort:SEARCH_MATCH){coverImage{extraLarge large}bannerImage description genres chapters staff(perPage:4,sort:RELEVANCE){edges{role node{name{full}}}}}}",variables:{q:s.t}})})
+ body:JSON.stringify({query:"query($q:String){Media(search:$q,type:MANGA,sort:SEARCH_MATCH){coverImage{extraLarge large}bannerImage description genres chapters externalLinks{url site type} staff(perPage:4,sort:RELEVANCE){edges{role node{name{full}}}}}}",variables:{q:s.t}})})
  .then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){var m=j.data&&j.data.Media;if(!m)throw 0;
   var cv=safe(m.coverImage&&(m.coverImage.extraLarge||m.coverImage.large)),bn=safe(m.bannerImage);
   if(cv&&!imgOf(s))s.img=cv;if(bn)s.banner=bn;
@@ -234,18 +234,18 @@ function lookup(s){return fetch("https://graphql.anilist.co",{method:"POST",head
   if(!s.a&&m.staff&&m.staff.edges){var E=m.staff.edges,sr=E.filter(function(e){return /story/i.test(e.role||"")}),L=(sr.length?sr:E.slice(0,1)).map(function(e){return e.node&&e.node.name&&e.node.name.full}).filter(Boolean);
    s.a=L.filter(function(x,i){return L.indexOf(x)==i}).slice(0,2).join(", ").slice(0,120)}
   if(m.chapters&&s.auto){s.n=Math.min(9999,m.chapters);delete s.auto;if(s.r>s.n)s.r=s.n}
-  s.looked=2;put(s);return true}).catch(function(){s.tried=Date.now();put(s);return false})}
+  s.officialLinks=(m.externalLinks||[]).filter(function(x){return x.type==="STREAMING"&&onlineURL(x.url)});s.looked=2;put(s);return true}).catch(function(){s.tried=Date.now();put(s);return false})}
 function norm(x){return String(x||"").replace(/<[^>]*>/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"")}
 /* Latest chapter from the MangaUpdates public API (credit: MangaUpdates). Only ever raises the count. */
 function chapters(s){return fetch("https://api.mangaupdates.com/v1/series/search",{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({search:s.t,perpage:6})})
  .then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){var n=norm(s.t),L=(j.results||[]).filter(function(x){return x.record&&x.record.type!="Novel"&&x.record.latest_chapter>0});
   var m=L.filter(function(x){return norm(x.record.title)==n||norm(x.hit_title)==n})[0]||L.filter(function(x){var t=norm(x.record.title);return t.length>3&&(t.indexOf(n)>=0||n.indexOf(t)>=0)})[0];
-  s.chk=Date.now();if(m){var v=Math.min(9999,Math.floor(m.record.latest_chapter));if(s.auto||v>s.n){s.n=v;delete s.auto}}put(s);return !!m}).catch(function(){return false})}
-function need(s){var t=Date.now();if(s.looked!==2&&s.tried&&t-s.tried<6048e5)return false;return s.looked!==2||!s.chk||t-s.chk>432e5}
+  if(m)s.chk=Date.now();if(m){var v=Math.min(9999,Math.floor(m.record.latest_chapter));if(s.auto||v>s.n){s.n=v;delete s.auto}}put(s);return !!m}).catch(function(){return false})}
+function need(s){var t=Date.now();return !s.chk||t-s.chk>216e5||((s.looked!==2||!s.officialLinks)&&(!s.tried||t-s.tried>6048e5))}
 var busy=0;
 function backfill(){if(busy)return;var q=LIB.filter(function(s){return need(s)});if(!q.length)return;busy=1;
  (function next(){var s=q.shift();if(!s){busy=0;buildHero();if(!location.hash||/^#(home|library|explore|history)$/.test(location.hash))route();return}
-  (s.looked===2?Promise.resolve():lookup(s)).then(function(){return new Promise(function(ok){setTimeout(ok,500)})}).then(function(){return chapters(s)}).then(function(){setTimeout(next,700)})})()}
+  (s.looked===2&&s.officialLinks?Promise.resolve():s.tried&&Date.now()-s.tried<6048e5?Promise.resolve():lookup(s)).then(function(){return new Promise(function(ok){setTimeout(ok,500)})}).then(function(){return chapters(s)}).then(function(){setTimeout(next,700)})})()}
 function seed(){var t=Date.now();return SEED.map(function(s,i){var c=JSON.parse(JSON.stringify(s));c.last=c.r>0?t-(i+1)*36e5:0;return c})}
 var SEEDV=4;
 function topUp(){var v=0;try{v=+localStorage.getItem(K("panel-seedv"))||0}catch(e){}
@@ -269,7 +269,7 @@ function card(s){var b=el("button","card"),c=cov(s,"cover");c.appendChild(el("sp
  var m=el("div","meta"),br=el("div","bar"),i=el("i");m.appendChild(el("b",0,s.t));m.appendChild(el("span",0,"Latest: Ch. "+s.n));
  i.style.width=Math.round(Math.min(s.r,s.n)/s.n*100)+"%";br.appendChild(i);m.appendChild(br);b.appendChild(m);
  b.onclick=function(){location.hash="series-"+s.id};return b}
-function chRow(s,n){var b=el("button","ch"+(n<=s.r?" read":"")),t=n<=s.r?"Read":n==s.r+1?"Up next":"";b.appendChild(el("span",0,"Chapter "+n));if(IMP[s.id+":"+n])t=t?t+", Imported":"Imported";else if(kgHas(s.id,n))t=t?t+", On server":"On server";b.appendChild(el("small",0,t));b.onclick=function(){location.hash="read-"+s.id+"-"+n};return b}
+function chRow(s,n){var b=el("button","ch"+(n<=s.r?" read":"")),t=n<=s.r?"Read":n==s.r+1?"Up next":"";b.appendChild(el("span",0,"Chapter "+n));if(IMP[s.id+":"+n])t=t?t+", Imported":"Imported";else if(onlineHas(s,n))t=t?t+", Online":"Online";b.appendChild(el("small",0,t));b.onclick=function(){location.hash="read-"+s.id+"-"+n};return b}
 function back(d,href,txt){var a=el("a","back",txt);a.href=href;d.appendChild(a)}
 /* Views */
 function render(){var g=$("grid"),f=$("q").value.trim().toLowerCase(),n=0;g.innerHTML="";
@@ -288,7 +288,7 @@ function detail(s,d){back(d,"#home","← Back to Home");var w=el("div","det"),r=
  lr.appendChild(el("span",0,"Latest chapter"));lr.appendChild(li);r.appendChild(lr);
  var c=s.r>=s.n?s.n:nextCh(s),b=el("button","btn",s.r<=0?"Start Chapter 1":s.r>=s.n?"Re-read Chapter "+s.n:"Continue Chapter "+c);
  b.style.margin="6px 0";b.onclick=function(){location.hash="read-"+s.id+"-"+c};r.appendChild(b);
- var L=el("div","chs");for(var n=s.n;n>=1;n--)L.appendChild(chRow(s,n));r.appendChild(L);w.appendChild(r);d.appendChild(w);importBox(s,d);komgaBox(s,d)}
+ var L=el("div","chs");for(var n=s.n;n>=1;n--)L.appendChild(chRow(s,n));r.appendChild(L);w.appendChild(r);d.appendChild(w);onlineLinks(s,d);importBox(s,d)}
 function libView(d){var sc=el("div","sec"),f=el("form","add"),g=el("div","grid");sc.appendChild(el("h2",0,"Library"));d.appendChild(sc);
  f.innerHTML='<input name=t placeholder="Title" aria-label="Title" required><input name=a placeholder="Author" aria-label="Author"><input name=g placeholder="Genres, comma separated" aria-label="Genres"><input name=n type=number min=1 max=9999 placeholder="Chapters (optional)" aria-label="Number of chapters"><button class=btn>Add manhwa</button>';
  f.onsubmit=function(e){e.preventDefault();var v=f.elements,t=v.t.value.trim();if(!t)return;
@@ -306,7 +306,7 @@ function histView(d){var sc=el("div","sec"),L=LIB.filter(function(s){return s.la
  d.appendChild(sc);if(!L.length)d.appendChild(el("div","empty","Nothing read yet. Open a chapter and it will show up here."));
  L.forEach(function(s){var r=el("div","row"),i=el("div","info"),b=el("button","btn","Resume");i.appendChild(el("b",0,s.t));i.appendChild(el("span",0,st(s)+", "+ago(s.last)));
   b.onclick=function(){location.hash="read-"+s.id+"-"+nextCh(s)};r.appendChild(cov(s,"sm"));r.appendChild(i);r.appendChild(b);d.appendChild(r)})}
-function readView(s,ch,d){s.r=Math.max(s.r,ch);s.last=Date.now();put(s);back(d,"#series-"+s.id,"← "+s.t);
+function readView(s,ch,d){if(IMP[s.id+":"+ch]||onlineHas(s,ch)){s.r=Math.max(s.r,ch);s.last=Date.now();put(s)}back(d,"#series-"+s.id,"← "+s.t);
  function bar(){var r=el("div","rnav"),p=el("button","btn ghost","Previous"),n=el("button","btn","Next chapter");p.disabled=ch<=1;n.disabled=ch>=s.n;
   p.onclick=function(){location.hash="read-"+s.id+"-"+(ch-1)};n.onclick=function(){location.hash="read-"+s.id+"-"+(ch+1)};
   r.appendChild(p);r.appendChild(el("b",0,"Chapter "+ch+" of "+s.n));r.appendChild(n);return r}
@@ -333,7 +333,7 @@ function settingsView(d){var sc=el("div","sec");sc.appendChild(el("h2",0,"Settin
  var t=el("button","btn ghost",document.documentElement.dataset.theme=="light"?"Light":"Dark");t.onclick=function(){tb.click();t.textContent=document.documentElement.dataset.theme=="light"?"Light":"Dark"};srow(d,"Theme",t);colorRows(d);
  var w=el("select","sel"),cw=document.documentElement.style.getPropertyValue("--pw")||"560px";w.setAttribute("aria-label","Reader page width");
  [["Narrow","420px"],["Medium","560px"],["Wide","760px"]].forEach(function(o){var p=el("option",0,o[0]);p.value=o[1];p.selected=o[1]==cw.trim();w.appendChild(p)});w.onchange=function(){setW(w.value)};srow(d,"Reader page width",w);
- komgaRows(d);kgAutoRows(d);d.appendChild(el("h3","set-h","Backup"));d.appendChild(el("p","set-p","Export your library and reading progress as text. Importing replaces what is in your library now."));
+ onlineRows(d);d.appendChild(el("h3","set-h","Backup"));d.appendChild(el("p","set-p","Export your library and reading progress as text. Importing replaces what is in your library now."));
  var ta=el("textarea","bk"),r=el("div","brow"),ex=el("button","btn ghost","Export"),im=el("button","btn","Import"),fi=el("input");ta.setAttribute("aria-label","Backup data");
  fi.type="file";fi.accept=".json,application/json";fi.setAttribute("aria-label","Choose a backup file");
  ex.onclick=function(){ta.value=JSON.stringify(LIB,null,1);ta.select();toast("Copy the text to keep your backup")};im.onclick=function(){imp(ta.value)};
@@ -383,8 +383,57 @@ function importBox(s,d){var b=el("section","impbox"),st=el("p","set-p"),row=el("
  if(Object.keys(IMP).some(function(k){return k.split(":")[0]==s.id})){clr.onclick=function(){if(!clr.dataset.s){clr.dataset.s=1;clr.textContent="Click again to remove all imported pages";setTimeout(function(){clr.textContent="Remove imported pages";delete clr.dataset.s},3000);return}
    delPages(s.id).then(function(){toast("Imported pages removed");route()})};b.appendChild(clr)}
  d.appendChild(b)}
-function loadPages(s,ch,P){if(!DB)return;getPages(s.id,ch).then(function(rec){if(!P.isConnected)return;if(!rec||!rec.blobs){if(kgHas(s.id,ch))kgRead(s,ch,P);return}P.innerHTML="";
- rec.blobs.forEach(function(bl,i){var im=document.createElement("img"),u=URL.createObjectURL(bl);OURLS.push(u);im.src=u;im.alt="Page "+(i+1);im.decoding="async";im.loading=i<2?"eager":"lazy";im.className="pgimg";P.appendChild(im)})}).catch(function(){})}
+function loadPages(s,ch,P){if(!DB){onlineRead(s,ch,P);return}getPages(s.id,ch).then(function(rec){if(!P.isConnected)return;if(!rec||!rec.blobs){onlineRead(s,ch,P);return}P.innerHTML="";
+ rec.blobs.forEach(function(bl,i){var im=document.createElement("img"),u=URL.createObjectURL(bl);OURLS.push(u);im.src=u;im.alt="Page "+(i+1);im.decoding="async";im.loading=i<2?"eager":"lazy";im.className="pgimg";P.appendChild(im)})}).catch(function(){onlineRead(s,ch,P)})}
+
+/* Authorized online sources: public HTTPS JSON chapter feeds, no Komga required. */
+var ONLINE_BUSY=false;
+function onlineURL(v){try{var u=new URL(v,location.href);return u.protocol==="https:"&&!u.username&&!u.password?u.href:""}catch(e){return ""}}
+function feedURL(){try{return localStorage.getItem(K("panel-online-feed"))||""}catch(e){return ""}}
+function onlineHas(s,n){return s.onlinePages&&s.onlinePages[n]&&s.onlinePages[n].length}
+async function onlineSync(){
+ if(ONLINE_BUSY)return "A check is already running.";
+ if(!feedURL())return "No authorized chapter feed configured. Release tracking still works.";
+ ONLINE_BUSY=true;
+ try{
+  var res=await fetch(feedURL(),{cache:"no-store",signal:AbortSignal.timeout(20000)});
+  if(!res.ok)throw new Error("Feed HTTP "+res.status);
+  var j=await res.json();if(!Array.isArray(j.series))throw new Error("Invalid feed: expected series array");
+  var matched=0,available=0;
+  for(var s of LIB){
+   var item=j.series.find(function(x){return x&&norm(x.title)===norm(s.t)});
+   if(!item||!Array.isArray(item.chapters))continue;
+   var pages={};for(var c of item.chapters){
+    if(!c||!Number.isInteger(c.number)||c.number<1||c.number>9999||!Array.isArray(c.pages))continue;
+    var urls=c.pages.map(onlineURL);if(urls.length&&urls.every(Boolean))pages[c.number]=urls;
+   }
+   s.onlinePages=pages;var ns=Object.keys(pages).map(Number);if(ns.length)s.n=Math.max(s.n,...ns);put(s);matched++;available+=ns.length;
+  }
+  if(!location.hash||/^#(home|library|explore)$/.test(location.hash))route();
+  return matched+" matched titles; "+available+" readable chapters.";
+ }catch(e){return "Online source error: "+e.message}finally{ONLINE_BUSY=false}
+}
+function onlineRows(d){
+ d.appendChild(el("h3","set-h","Online chapters"));
+ d.appendChild(el("p","set-p","No Komga server needed. Connect a public HTTPS JSON feed of chapters you own or have permission to access. PANEL checks it every 15 minutes while open. MangaUpdates release tracking works independently."));
+ var f=el("input","sel"),save=el("button","btn","Save & check"),st=el("p","set-p");f.type="url";f.placeholder="https://…/chapters.json";f.value=feedURL();f.setAttribute("aria-label","Authorized chapter feed URL");
+ save.onclick=async function(){var u=f.value.trim();if(u&&!/^https:\/\//i.test(u)){st.textContent="Enter an HTTPS feed URL.";return}try{localStorage.setItem(K("panel-online-feed"),u)}catch(e){st.textContent="Storage unavailable";return}save.disabled=true;st.textContent="Checking…";try{st.textContent=await onlineSync()}finally{save.disabled=false}};
+ srow(d,"Chapter feed URL",f);d.appendChild(save);d.appendChild(st);
+ var refresh=el("button","btn ghost","Check release numbers");refresh.onclick=function(){if(busy){st.textContent="A release check is already running.";return}LIB.forEach(function(s){s.chk=0});backfill();st.textContent="Release check started."};d.appendChild(refresh);
+}
+function onlineLinks(s,d){
+ if(!Array.isArray(s.officialLinks)||!s.officialLinks.length)return;
+ d.appendChild(el("h3","set-h","Official reading links"));
+ for(var x of s.officialLinks){var u=onlineURL(x.url);if(!u)continue;var a=el("a","back",x.site||"Publisher");a.href=u;a.target="_blank";a.rel="noopener noreferrer";d.appendChild(a);d.appendChild(el("div"))}
+}
+function onlineRead(s,ch,P){
+ if(!P.isConnected)return;P.innerHTML="";
+ if(!onlineHas(s,ch)){P.appendChild(el("p","set-p","No authorized pages available for this chapter. Open an official reading link or import your own chapter files."));onlineLinks(s,P);return}
+ var urls=s.onlinePages[ch];for(var i=0;i<urls.length;i++){var im=el("img","pgimg");im.src=urls[i];im.alt="Page "+(i+1);im.loading=i<2?"eager":"lazy";im.onerror=function(){this.alt="Page unavailable from source"};P.appendChild(im)}
+}
+setInterval(function(){onlineSync();backfill()},900000);
+window.addEventListener("online",function(){onlineSync();backfill()});
+
 /* Komga library server: read and download chapters you keep on your own server */
 var KG=null;
 function kgGet(){if(!KG){try{KG=JSON.parse(localStorage.getItem(K("panel-komga"))||"{}")||{}}catch(e){KG={}}}return KG}
@@ -487,7 +536,7 @@ function kgAutoRows(d){
  run.onclick=async function(){if(KG_AUTO_RUNNING){status.textContent="A download is already running.";return}run.disabled=true;status.textContent="Checking linked titles…";try{status.textContent=await kgAutoRun(true)}catch(e){status.textContent="Check failed: "+e.message}finally{run.disabled=false}};
  d.appendChild(run);d.appendChild(status)
 }
-setInterval(kgAutoRun,KG_AUTO_INTERVAL);window.addEventListener("online",function(){kgAutoRun()});document.addEventListener("visibilitychange",function(){if(!document.hidden)kgAutoRun()});
+
 function mark(n){document.querySelectorAll(".nav").forEach(function(b){if(b.dataset.n==n)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")})}
 function route(){var h=location.hash,m,s,ch,v="Home",d=$("detail"),hm=$("home");OURLS.forEach(function(u){URL.revokeObjectURL(u)});OURLS=[];d.innerHTML="";
  if((m=/^#read-(\d+)-(\d+)$/.exec(h))&&(s=get(+m[1]))&&(ch=+m[2])>=1&&ch<=s.n)readView(s,ch,d);
@@ -539,7 +588,7 @@ try{var th=localStorage.getItem(K("panel-theme"));if(th)setTheme(th)}catch(e){}
 tb.onclick=function(){setTheme(document.documentElement.dataset.theme=="light"?"dark":"light")};
 /* Boot: load the library from IndexedDB, falling back to in-memory data */
 if(PROF)openDB().then(function(d){DB=d;return loadKeys().then(getAll)}).then(function(r){if(!r.length&&!seeded()){r=seed();r.forEach(put);try{localStorage.setItem(K("panel-seeded"),"1")}catch(e){}}return r})
- .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill();kgAutoRun()});
+ .then(function(r){LIB=r;topUp()}).catch(function(){LIB=seed()}).then(function(){buildHero();route();backfill();onlineSync()});
 
 </script>
 <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(console.warn);</script></body>
